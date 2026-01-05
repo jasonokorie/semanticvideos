@@ -72,6 +72,15 @@ param openAiKey string = ''
 @description('Azure OpenAI endpoint to use. If provided, no Azure OpenAI instance will be created.')
 param openAiEndpoint string = ''
 
+@description('Flag to decide whether to create Azure Storage for video uploads')
+param createAzureStorage bool = true
+
+@description('Name of the storage container for videos')
+param storageContainerName string = 'videos'
+
+@description('Days to retain video blobs before auto-deletion')
+param storageBlobRetentionDays int = 30
+
 param acaExists bool = false
 
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
@@ -141,6 +150,19 @@ module containerApps 'core/host/container-apps.bicep' = {
   }
 }
 
+// Storage account for video uploads
+module storage 'core/storage/storage-account.bicep' = if (createAzureStorage) {
+  name: 'storage'
+  scope: resourceGroup
+  params: {
+    name: '${replace(prefix, '-', '')}storage'
+    location: location
+    tags: tags
+    containerName: storageContainerName
+    blobRetentionDays: storageBlobRetentionDays
+  }
+}
+
 // Container app frontend
 module aca 'aca.bicep' = {
   name: 'aca'
@@ -155,6 +177,8 @@ module aca 'aca.bicep' = {
     openAiDeploymentName: openAiDeploymentName
     openAiEndpoint: createAzureOpenAi ? openAi.outputs.endpoint : openAiEndpoint
     openAiKey: openAiKey
+    storageAccountUrl: createAzureStorage ? storage.outputs.blobEndpoint : ''
+    storageContainerName: storageContainerName
     exists: acaExists
   }
 }
@@ -181,6 +205,18 @@ module openAiRoleBackend 'core/security/role.bicep' = if (createAzureOpenAi) {
   }
 }
 
+// Grant container app access to storage
+module storageRoleBackend 'core/security/role.bicep' = if (createAzureStorage) {
+  scope: resourceGroup
+  name: 'storage-role-backend'
+  params: {
+    principalId: aca.outputs.SERVICE_ACA_IDENTITY_PRINCIPAL_ID
+    // Storage Blob Data Contributor role
+    roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output AZURE_LOCATION string = location
 output AZURE_RESOURCE_GROUP string = resourceGroup.name
 output AZURE_TENANT_ID string = tenant().tenantId
@@ -197,3 +233,7 @@ output SERVICE_ACA_IMAGE_NAME string = aca.outputs.SERVICE_ACA_IMAGE_NAME
 output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerApps.outputs.environmentName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerApps.outputs.registryLoginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = containerApps.outputs.registryName
+
+output AZURE_STORAGE_ACCOUNT_NAME string = createAzureStorage ? storage.outputs.name : ''
+output AZURE_STORAGE_ACCOUNT_URL string = createAzureStorage ? storage.outputs.blobEndpoint : ''
+output AZURE_STORAGE_CONTAINER_NAME string = storageContainerName

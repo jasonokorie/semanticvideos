@@ -12,6 +12,12 @@ param openAiEndpoint string
 @secure()
 param openAiKey string = ''
 
+@description('Azure Storage account URL for video uploads')
+param storageAccountUrl string = ''
+
+@description('Storage container name for videos')
+param storageContainerName string = 'videos'
+
 resource acaIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
   location: location
@@ -41,12 +47,31 @@ var env = [
   }
 ]
 
-var envWithSecret = !empty(openAiKey) ? union(env, [
+var storageEnv = !empty(storageAccountUrl) ? [
+  {
+    name: 'AZURE_STORAGE_ACCOUNT_URL'
+    value: storageAccountUrl
+  }
+  {
+    name: 'AZURE_STORAGE_CONTAINER_NAME'
+    value: storageContainerName
+  }
+  {
+    name: 'VIDEO_EXTRACT_FPS'
+    value: '1.0'
+  }
+  {
+    name: 'MAX_FRAMES_PER_REQUEST'
+    value: '10'
+  }
+] : []
+
+var envWithSecret = !empty(openAiKey) ? union(env, storageEnv, [
   {
     name: 'AZURE_OPENAI_KEY_FOR_CHATVISION'
     secretRef: 'azure-openai-key'
   }
-]) : env
+]) : union(env, storageEnv)
 
 var secrets = !empty(openAiKey) ? {
   'azure-openai-key': openAiKey

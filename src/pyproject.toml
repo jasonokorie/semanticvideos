@@ -11,7 +11,10 @@ dependencies = [
     "azure-identity",
     "aiohttp",
     "python-dotenv",
-    "pyyaml"
+    "pyyaml",
+    "azure-storage-blob>=12.19.0",
+    "opencv-python-headless>=4.9.0.80",
+    "numpy>=1.24.0"
     ]
 
 [build-system]

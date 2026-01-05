@@ -70,3 +70,21 @@ speech-output-button button.speech-output-active {
     box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
   }
 }
+
+/* Video preview and upload styles */
+
+#messages .message-file video {
+  max-width: 100%;
+  max-height: 400px;
+}
+
+#video-preview {
+  max-height: 150px;
+  float: right;
+  margin-left: 20px;
+}
+
+#upload-progress {
+  height: 8px;
+  margin-top: 8px;
+}

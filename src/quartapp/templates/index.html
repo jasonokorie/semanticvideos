@@ -56,14 +56,14 @@
                     <div class="flex-grow-1">
 
 
-                        <label for="file" class="form-label" style="color:white">Upload image:</label>
+                        <label for="file" class="form-label" style="color:white">Upload image or video:</label>
                         <div class="input-group mb-3">
                             <i class="bi bi-file-earmark-text input-group-text" aria-hidden="true"></i>
-                            <input id="file" name="file" class="form-control form-control-sm" type="file" accept=".png, .jpg" aria-label="Upload File"></input>
+                            <input id="file" name="file" class="form-control form-control-sm" type="file" accept=".png, .jpg, .jpeg, .mp4" aria-label="Upload File"></input>
                         </div>
 
 
-                        <label for="message" class="form-label bi" style="color:white">Ask question about image:</label>
+                        <label for="message" class="form-label bi" style="color:white">Ask question about image or video:</label>
                         <div class="input-group">
                             <speech-input-button></speech-input-button>
                             <input id="message" name="message" class="form-control form-control-sm" type="text" rows="1" placeholder="<Your Message>" aria-label="Ask ChatGPT"></input>
@@ -74,6 +74,11 @@
                         </div>
                     </div>
                     <img id="image-preview" class="img-fluid mt-2" style="display: none;" />
+                    <video id="video-preview" class="img-fluid mt-2" style="display: none;" controls></video>
+                    <div id="upload-progress" class="progress mt-2" style="display: none;">
+                        <div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
                 </div>
             </form>
         </div>
@@ -98,19 +103,67 @@
             reader.onerror = reject;
         });
 
+        async function uploadVideo(file) {
+            const formData = new FormData();
+            formData.append('video', file);
+
+            const uploadProgress = document.getElementById("upload-progress");
+            const uploadProgressBar = document.getElementById("upload-progress-bar");
+
+            uploadProgress.style.display = "block";
+            uploadProgressBar.style.width = "0%";
+
+            try {
+                const response = await fetch('/chat/video/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                uploadProgressBar.style.width = "100%";
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Upload failed');
+                }
+
+                const result = await response.json();
+                uploadProgress.style.display = "none";
+
+                return result;
+
+            } catch (error) {
+                uploadProgress.style.display = "none";
+                throw error;
+            }
+        }
+
         const client = new ChatProtocol.AIChatProtocolClient("/chat");
 
         const fileInput = document.getElementById("file");
         const imagePreview = document.getElementById("image-preview");
+        const videoPreview = document.getElementById("video-preview");
 
         fileInput.addEventListener("change", async function() {
             const file = fileInput.files[0];
             if (file) {
-                const fileData = await toBase64(file);
-                imagePreview.src = fileData;
-                imagePreview.style.display = "block";
+                const fileExt = file.name.split('.').pop().toLowerCase();
+
+                if (fileExt === 'mp4') {
+                    // Show video preview
+                    const fileURL = URL.createObjectURL(file);
+                    videoPreview.src = fileURL;
+                    videoPreview.style.display = "block";
+                    imagePreview.style.display = "none";
+                } else {
+                    // Show image preview (existing behavior)
+                    const fileData = await toBase64(file);
+                    imagePreview.src = fileData;
+                    imagePreview.style.display = "block";
+                    videoPreview.style.display = "none";
+                }
             } else {
                 imagePreview.style.display = "none";
+                videoPreview.style.display = "none";
             }
         });
 
@@ -130,16 +183,51 @@
             document.getElementById("no-messages-heading").style.display = "none";
 
             const file = document.getElementById("file").files[0];
-            const fileData = file ? await toBase64(file) : null;
-
             const message = messageInput.value;
 
+            // Determine if video or image
+            let fileData = null;
+            let frames = null;
+            let isVideo = false;
+
+            if (file) {
+                const fileExt = file.name.split('.').pop().toLowerCase();
+                isVideo = (fileExt === 'mp4');
+
+                if (isVideo) {
+                    try {
+                        // Upload video and get frames
+                        const uploadResult = await uploadVideo(file);
+                        frames = uploadResult.frames;
+                    } catch (error) {
+                        alert("Video upload failed: " + error.message);
+                        return;
+                    }
+                } else {
+                    // Convert image to base64 (existing behavior)
+                    fileData = await toBase64(file);
+                }
+            }
+
+            // Display user message
             const userTemplateClone = userTemplate.content.cloneNode(true);
             userTemplateClone.querySelector(".message-content").innerText = message;
+
             if (file) {
-                const img = document.createElement("img");
-                img.src = fileData;
-                userTemplateClone.querySelector(".message-file").appendChild(img);
+                if (isVideo) {
+                    // Show video thumbnail
+                    const video = document.createElement("video");
+                    video.src = videoPreview.src;
+                    video.controls = true;
+                    video.style.maxWidth = "100%";
+                    video.style.maxHeight = "200px";
+                    userTemplateClone.querySelector(".message-file").appendChild(video);
+                } else {
+                    // Show image (existing behavior)
+                    const img = document.createElement("img");
+                    img.src = fileData;
+                    userTemplateClone.querySelector(".message-file").appendChild(img);
+                }
             }
             targetContainer.appendChild(userTemplateClone);
 
@@ -154,12 +242,18 @@
 
             try {
                 messageDiv.scrollIntoView();
-                const result = await client.getStreamedCompletion(messages, {
-                    context: {
-                        file: fileData,
-                        file_name: file ? file.name : null
-                    }
-                });
+
+                // Build context with either single image or video frames
+                const context = {};
+                if (isVideo && frames) {
+                    context.frames = frames;
+                    context.file_name = file.name;
+                } else if (fileData) {
+                    context.file = fileData;
+                    context.file_name = file ? file.name : null;
+                }
+
+                const result = await client.getStreamedCompletion(messages, { context });
 
                 let answer = "";
                 for await (const response of result) {

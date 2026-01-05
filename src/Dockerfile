@@ -10,6 +10,25 @@ RUN apk add --update --no-cache tini
 # https://cryptography.io/en/latest/installation/#building-cryptography-on-linux
 RUN apk add gcc musl-dev python3-dev libffi-dev openssl-dev cargo pkgconfig
 
+# Install OpenCV dependencies
+RUN apk add --no-cache \
+    jpeg-dev \
+    zlib-dev \
+    freetype-dev \
+    lcms2-dev \
+    openjpeg-dev \
+    tiff-dev \
+    tk-dev \
+    tcl-dev \
+    harfbuzz-dev \
+    fribidi-dev \
+    libimagequant-dev \
+    libxcb-dev \
+    libpng-dev \
+    ffmpeg-dev \
+    cmake \
+    make
+
 # ------------------- Stage 1: Build Stage ------------------------------
 FROM base AS build
 
